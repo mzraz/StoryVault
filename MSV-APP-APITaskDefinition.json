@@ -1,0 +1,95 @@
+{
+        "taskDefinitionArn": "arn:aws:ecs:us-west-2:756821943605:task-definition/MSV-APP-APITaskDefinition:2",
+        "containerDefinitions": [
+            {
+                "name": "MSV-APP-API",
+                "image": "756821943605.dkr.ecr.us-west-2.amazonaws.com/msv-app-api:latest",
+                "cpu": 0,
+                "links": [],
+                "portMappings": [
+                    {
+                        "containerPort": 3053,
+                        "hostPort": 3053,
+                        "protocol": "tcp"
+                    }
+                ],
+                "essential": true,
+                "entryPoint": [],
+                "command": [],
+                "environment": [
+                    {
+                        "name": "NODE_ENV",
+                        "value": "production"
+                    }
+                ],
+                "environmentFiles": [],
+                "mountPoints": [],
+                "volumesFrom": [],
+                "secrets": [],
+                "dnsServers": [],
+                "dnsSearchDomains": [],
+                "extraHosts": [],
+                "dockerSecurityOptions": [],
+                "dockerLabels": {},
+                "ulimits": [],
+                "logConfiguration": {
+                    "logDriver": "awslogs",
+                    "options": {
+                        "awslogs-group": "/ecs/MSV-APP-APITaskDefinition",
+                        "awslogs-region": "us-west-2",
+                        "awslogs-stream-prefix": "ecs"
+                    },
+                    "secretOptions": []
+                },
+                "systemControls": []
+            }
+        ],
+        "family": "MSV-APP-APITaskDefinition",
+        "taskRoleArn": "arn:aws:iam::756821943605:role/MSV-APP-APITaskRole",
+        "executionRoleArn": "arn:aws:iam::756821943605:role/MSV-APP-APIExecutionRole",
+        "networkMode": "awsvpc",
+        "revision": 2,
+        "volumes": [],
+        "status": "ACTIVE",
+        "requiresAttributes": [
+            {
+                "name": "com.amazonaws.ecs.capability.logging-driver.awslogs"
+            },
+            {
+                "name": "ecs.capability.execution-role-awslogs"
+            },
+            {
+                "name": "com.amazonaws.ecs.capability.ecr-auth"
+            },
+            {
+                "name": "com.amazonaws.ecs.capability.docker-remote-api.1.19"
+            },
+            {
+                "name": "com.amazonaws.ecs.capability.docker-remote-api.1.17"
+            },
+            {
+                "name": "com.amazonaws.ecs.capability.task-iam-role"
+            },
+            {
+                "name": "ecs.capability.execution-role-ecr-pull"
+            },
+            {
+                "name": "com.amazonaws.ecs.capability.docker-remote-api.1.18"
+            },
+            {
+                "name": "ecs.capability.task-eni"
+            }
+        ],
+        "placementConstraints": [],
+        "compatibilities": [
+            "EC2",
+            "FARGATE"
+        ],
+        "requiresCompatibilities": [
+            "FARGATE"
+        ],
+        "cpu": "1024",
+        "memory": "2048",
+        "registeredAt": "2022-08-12T05:45:08.663000-07:00",
+        "registeredBy": "arn:aws:sts::756821943605:assumed-role/AWSReservedSSO_AWSAdministratorAccess_5f534e4a952eaf47/joesprankle"
+}

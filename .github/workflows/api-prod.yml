@@ -1,0 +1,270 @@
+name: Deploy to Amazon ECS
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}             1
+
+jobs:
+  DEPLOY-API-TO-STAGE:
+    name: DEPLOY-API-TO-STAGE
+    runs-on: ubuntu-latest
+    environment: stage
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+      
+      - name: Confirm Registry
+        run: echo ${{ steps.login-ecr.outputs.registry }}
+
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Build a docker container and
+          # push it to ECR so that it can
+          # be deployed to ECS.
+          cp .github/server-stage.env server/.env
+          cd server
+          sed -i 's/DBUPDATEME/${{ secrets.MYSQLPW }}/g' .env
+          sed -i 's/CIDUPDATEME/${{ secrets.COGNITOPW }}/g' .env
+          cat .env 
+          aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin 756821943605.dkr.ecr.us-west-2.amazonaws.com
+          docker build -t msv-app-api-stage .
+          docker tag msv-app-api-stage:latest 756821943605.dkr.ecr.us-west-2.amazonaws.com/msv-app-api-stage:${{ github.sha }}
+          docker push 756821943605.dkr.ecr.us-west-2.amazonaws.com/msv-app-api-stage:${{ github.sha }}
+
+      - name: Fill in the new image ID in the Amazon ECS task definition
+        id: task-def-api
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: MSV-APP-API-TaskDefinition-Stage.json
+          container-name: MSV-APP-API-STAGE
+          image: 756821943605.dkr.ecr.us-west-2.amazonaws.com/msv-app-api-stage:${{ github.sha }}
+
+      - name: Deploy Amazon ECS task definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.task-def-api.outputs.task-definition }}
+          service: API-STAGE
+          cluster: MSV-APP-CLIENTAPI-Stage
+          wait-for-service-stability: true
+
+  DEPLOY-CLIENT-TO-STAGE:
+    name: DEPLOY-CLIENT-TO-STAGE
+    runs-on: ubuntu-latest
+    environment: stage
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+      
+      - name: Confirm Registry
+        run: echo ${{ steps.login-ecr.outputs.registry }}
+
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Build a docker container and
+          # push it to ECR so that it can
+          # be deployed to ECS.
+          aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin 756821943605.dkr.ecr.us-west-2.amazonaws.com
+          cp .github/client-stage.env client/.env
+          cd client
+          cat .env
+          docker build -t msv-app-client-stage .
+          docker tag msv-app-client-stage:latest 756821943605.dkr.ecr.us-west-2.amazonaws.com/msv-app-client-stage:${{ github.sha }}
+          docker push 756821943605.dkr.ecr.us-west-2.amazonaws.com/msv-app-client-stage:${{ github.sha }}
+
+      - name: Fill in the new image ID in the Amazon ECS task definition
+        id: task-def-client
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: MSV-APP-CLIENT-TaskDefinition-Stage.json
+          container-name: MSV-APP-CLIENT-STAGE
+          image: 756821943605.dkr.ecr.us-west-2.amazonaws.com/msv-app-client-stage:${{ github.sha }}
+
+      - name: Deploy Amazon ECS task definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.task-def-client.outputs.task-definition }}
+          service: CLIENT-STAGE
+          cluster: MSV-APP-CLIENTCluster-Stage
+          wait-for-service-stability: true
+  
+  DEPLOY-API-TO-PROD:
+    name: DEPLOY-API-TO-PROD
+    runs-on: ubuntu-latest
+    environment: production
+    permissions: write-all    
+    needs: [DEPLOY-API-TO-STAGE, DEPLOY-CLIENT-TO-STAGE]
+
+    steps:
+      - uses: trstringer/manual-approval@v1
+        timeout-minutes: 10
+        with:
+          secret: ${{ github.TOKEN }}
+          approvers: moeenuddin3, joesprankle
+          minimum-approvals: 1
+          issue-title: "Deploying v1.3.5 to prod from staging"
+          issue-body: "Please approve or deny the deployment of version v1.3.5."
+          exclude-workflow-initiator-as-approver: false
+          additional-approved-words: ''
+          additional-denied-words: ''
+
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+      
+      - name: Confirm Registry
+        run: echo ${{ steps.login-ecr.outputs.registry }}
+
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Build a docker container and
+          # push it to ECR so that it can
+          # be deployed to ECS.
+          cp .github/server.env server/.env
+          cd server
+          sed -i 's/DBUPDATEME/${{ secrets.MYSQLPW }}/g' .env
+          sed -i 's/CIDUPDATEME/${{ secrets.COGNITOPW }}/g' .env
+          cat .env 
+          aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin 756821943605.dkr.ecr.us-west-2.amazonaws.com
+          docker build -t msv-app-api .
+          docker tag msv-app-api:latest 756821943605.dkr.ecr.us-west-2.amazonaws.com/msv-app-api:${{ github.sha }}
+          docker push 756821943605.dkr.ecr.us-west-2.amazonaws.com/msv-app-api:${{ github.sha }}
+
+      - name: Fill in the new image ID in the Amazon ECS task definition
+        id: task-def-api
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: MSV-APP-APITaskDefinition.json
+          container-name: MSV-APP-API
+          image: 756821943605.dkr.ecr.us-west-2.amazonaws.com/msv-app-api:${{ github.sha }}
+
+      - name: Deploy Amazon ECS task definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.task-def-api.outputs.task-definition }}
+          service: API-EXPRESS
+          cluster: MSV-APP-APICluster
+          wait-for-service-stability: true
+
+  DEPLOY-CLIENT-TO-PROD:
+    name: DEPLOY-CLIENT-TO-PROD
+    runs-on: ubuntu-latest
+    environment: production
+    permissions: write-all
+    needs: [DEPLOY-API-TO-STAGE, DEPLOY-CLIENT-TO-STAGE]
+
+    steps:
+      - uses: trstringer/manual-approval@v1
+        timeout-minutes: 10
+        with:
+          secret: ${{ github.TOKEN }}
+          approvers: moeenuddin3, joesprankle
+          minimum-approvals: 1
+          issue-title: "Deploying v1.3.5 to prod from staging"
+          issue-body: "Please approve or deny the deployment of version v1.3.5."
+          exclude-workflow-initiator-as-approver: false
+          additional-approved-words: ''
+          additional-denied-words: ''
+
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+      
+      - name: Confirm Registry
+        run: echo ${{ steps.login-ecr.outputs.registry }}
+
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Build a docker container and
+          # push it to ECR so that it can
+          # be deployed to ECS.
+          aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin 756821943605.dkr.ecr.us-west-2.amazonaws.com
+          cp .github/client.env client/.env
+          cd client
+          cat .env
+          docker build -t msv-app-client .
+          docker tag msv-app-client:latest 756821943605.dkr.ecr.us-west-2.amazonaws.com/msv-app-client:${{ github.sha }}
+          docker push 756821943605.dkr.ecr.us-west-2.amazonaws.com/msv-app-client:${{ github.sha }}
+
+      - name: Fill in the new image ID in the Amazon ECS task definition
+        id: task-def-client
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: MSV-APP-CLIENTTaskDefinition.json
+          container-name: MSV-APP-CLIENT
+          image: 756821943605.dkr.ecr.us-west-2.amazonaws.com/msv-app-client:${{ github.sha }}
+
+      - name: Deploy Amazon ECS task definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.task-def-client.outputs.task-definition }}
+          service: Client-Express
+          cluster: MSV-APP-CLIENTCluster
+          wait-for-service-stability: true
